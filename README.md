@@ -302,16 +302,17 @@ NGC includes CUDA compatibility libraries; the GPU preflight verifies the
 combination of container libraries and the allocated node's host driver.
 
 ```bash
-export DINOSATS_DATA="$SCRATCH/remote_outcomes"
 export DINOSATS_OUT="$SCRATCH/siaya_full"
 mkdir -p "$SCRATCH/dinosats-logs"
-sbatch --output="$SCRATCH/dinosats-logs/siaya-%j.log" scripts/siaya.sbatch \
-    --inventory "$SCRATCH/inventory.json" \
-    --requests "$DINOSATS_DATA/csda/vantor_request.csv" \
-    --clouds "$DINOSATS_DATA/csda/vantor_browse"
+sbatch --output="$SCRATCH/dinosats-logs/siaya-%j.log" scripts/siaya.sbatch
 ```
 
-Update inventory paths before submission. [Sherlock exposes compute-node
+The job defaults to `$SCRATCH/inventory.json`, `$SCRATCH/vantor_request.csv`,
+and `$SCRATCH/vantor_browse`. The inventory's RGB paths must point to the
+transferred strip VRTs under `$SCRATCH/ard`. Pass `--inventory`, `--requests`,
+or `--clouds` after the script name to override these defaults.
+
+[Sherlock exposes compute-node
 filesystems inside containers by default](https://www.sherlock.stanford.edu/docs/software/containers/apptainer/).
 No explicit bindings are needed. Submit from the repository root: the job runs
 the checked-out embedding script using the container's Python and libraries.

@@ -43,4 +43,7 @@ apptainer exec --cleanenv --nv "$image" \
 apptainer exec --cleanenv --nv "$image" \
     uv run --no-project --no-cache --python /opt/venv/bin/python "${env_args[@]}" \
     python -u "$repo/scripts/build_siaya_full.py" \
+    --inventory "${DINOSATS_INVENTORY:-$SCRATCH/inventory.json}" \
+    --requests "$SCRATCH/vantor_request.csv" \
+    --clouds "$SCRATCH/vantor_browse" \
     "$@" --out "$out" --device cuda:0
