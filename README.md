@@ -294,14 +294,14 @@ transfer the SIF. The recipe includes the pinned DINOv3 source, but weights and
 imagery remain external. This profile covers embedding, not ONNX text export;
 copy the existing browser model assets separately.
 
-`scripts/siaya.sbatch` requests one A100 or H100 in `serc` and checks CUDA before
-processing. Recent NGC images do not support the V100s also present in `serc`.
+`scripts/siaya.sbatch` defaults to `$GROUP_HOME/containers/dinosats.sif`, requests
+one A100 or H100 in `serc`, and checks CUDA before processing.
+Recent NGC images do not support the V100s also present in `serc`.
 Driver compatibility must pass the preflight on the allocated node.
 NGC includes CUDA compatibility libraries; the GPU preflight verifies the
 combination of container libraries and the allocated node's host driver.
 
 ```bash
-export DINOSATS_IMAGE="$GROUP_HOME/$USER/dinosats-ngc/dinosats-26.02.sif"
 export DINOSATS_DATA="$SCRATCH/remote_outcomes"
 export DINOSATS_WEIGHTS="$SCRATCH/dinosats-weights"
 export DINOSATS_OUT="$SCRATCH/siaya_full"
@@ -321,7 +321,7 @@ Inside an existing GPU allocation, the optional synthetic benchmark tests the
 ViT-L/16 architecture without downloading weights:
 
 ```bash
-apptainer exec --cleanenv --nv "$DINOSATS_IMAGE" \
+apptainer exec --cleanenv --nv "$GROUP_HOME/containers/dinosats.sif" \
     python /opt/dinosats/scripts/check_runtime.py --benchmark
 ```
 

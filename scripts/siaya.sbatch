@@ -8,7 +8,6 @@
 #SBATCH --time=24:00:00
 
 set -euo pipefail
-: "${DINOSATS_IMAGE:?Set the path to the built DinoSats SIF}"
 : "${DINOSATS_DATA:?Set the parent directory of the processed imagery}"
 : "${DINOSATS_WEIGHTS:?Set the directory containing the model weights}"
 : "${DINOSATS_OUT:?Set a new output directory on SCRATCH or GROUP_SCRATCH}"
@@ -18,7 +17,7 @@ printf 'SLURM_JOB_ID=%s\n' "$SLURM_JOB_ID"
 nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
 
 mkdir -p "$DINOSATS_OUT"
-image=$(realpath "$DINOSATS_IMAGE")
+image=$(realpath "${DINOSATS_IMAGE:-$GROUP_HOME/containers/dinosats.sif}")
 data=$(realpath "$DINOSATS_DATA")
 weights=$(realpath "$DINOSATS_WEIGHTS")
 out=$(realpath "$DINOSATS_OUT")
