@@ -259,6 +259,75 @@ relocating inputs: the resume fingerprint includes paths and VRT timestamps.
 After processing, the browser also needs the local text model and tokenizer
 described in the pilot section. These assets are excluded from git.
 
+### Sherlock with NGC / Apptainer
+
+The container recipe is awaiting cluster validation. It follows the working
+`remote_outcomes` build: NGC 26.02, node-local extraction, and a staged image
+published only after smoke checks pass. Builds request eight CPUs and 64 GB.
+
+The host's glibc 2.17 cannot install the locked ONNX Runtime wheel, which needs
+glibc 2.28 or newer. Use `containers/ngc.def` for a separate embedding runtime:
+NGC `pytorch:26.02-py3` supplies Python 3.12, PyTorch 2.11 and CUDA 13.1.1.
+`uv` installs extra packages in an in-image environment that inherits NGC's
+packages. Torch/TorchVision versions are protected, and NumPy is capped below
+2 to match the working reference. Do not run the workstation `uv sync` inside
+this image: it would replace NVIDIA's stack.
+The resolved package list is saved at `/opt/dinosats/runtime-packages.txt`.
+
+Build from this repository's root on an Apptainer build host. All Sherlock jobs,
+including CPU builds, use `serc`. Put temporary files on node-local
+storage and the finished SIF under `$GROUP_HOME/$USER`. Allow substantial
+temporary space for NGC's unpacked image.
+
+```bash
+mkdir -p "$SCRATCH/dinosats-logs"
+DINOSATS_GPU_TEST=1 sbatch --gpus=1 --constraint='GPU_GEN:AMP|GPU_GEN:HPR' \
+    --output="$SCRATCH/dinosats-logs/build-%j.log" scripts/build_ngc.sbatch
+```
+
+This single allocation builds the final image, checks native libraries, then
+benchmarks synthetic DINOv3 inference on its GPU. For a CPU-only build, omit
+`DINOSATS_GPU_TEST`, `--gpus`, and `--constraint`.
+
+If the build host does not support fakeroot, build on a machine that does and
+transfer the SIF. The recipe includes the pinned DINOv3 source, but weights and
+imagery remain external. This profile covers embedding, not ONNX text export;
+copy the existing browser model assets separately.
+
+`scripts/siaya.sbatch` requests one A100 or H100 in `serc` and checks CUDA before
+processing. Recent NGC images do not support the V100s also present in `serc`.
+Driver compatibility must pass the preflight on the allocated node.
+NGC includes CUDA compatibility libraries; the GPU preflight verifies the
+combination of container libraries and the allocated node's host driver.
+
+```bash
+export DINOSATS_IMAGE="$GROUP_HOME/$USER/dinosats-ngc/dinosats-26.02.sif"
+export DINOSATS_DATA="$SCRATCH/remote_outcomes"
+export DINOSATS_WEIGHTS="$SCRATCH/dinosats-weights"
+export DINOSATS_OUT="$SCRATCH/siaya_full"
+mkdir -p "$SCRATCH/dinosats-logs"
+sbatch --output="$SCRATCH/dinosats-logs/siaya-%j.log" scripts/siaya.sbatch \
+    --inventory "$SCRATCH/inventory.json" \
+    --requests "$DINOSATS_DATA/csda/vantor_request.csv" \
+    --clouds "$DINOSATS_DATA/csda/vantor_browse"
+```
+
+Update inventory paths before submission. Inputs are bound at the same absolute
+paths, with imagery and weights read-only. Keep permanent copies of inputs and
+finished outputs outside Sherlock's purged scratch storage. Re-submit the same
+command to resume after the time limit.
+
+Inside an existing GPU allocation, the optional synthetic benchmark tests the
+ViT-L/16 architecture without downloading weights:
+
+```bash
+apptainer exec --cleanenv --nv "$DINOSATS_IMAGE" \
+    python /opt/dinosats/scripts/check_runtime.py --benchmark
+```
+
+This measures model inference only; it does not estimate the full pipeline's
+imagery I/O, PCA, compositing, or output assembly time.
+
 ## Configuration
 
 The app reads its settings from [`web/config.json`](web/config.json), which lists the scene's files, the text model, the background prompts and the example prompts. Each path can be relative to `web/` or a full URL.

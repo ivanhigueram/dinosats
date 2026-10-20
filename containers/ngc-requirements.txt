@@ -1,0 +1,10 @@
+# Preserve NGC's torch/CUDA stack; match remote_outcomes' NumPy ABI.
+# This profile supports embedding; the workstation lock also supports ONNX export.
+numpy>=1.26,<2
+rasterio>=1.4,<1.5
+shapely>=2.1,<2.2
+safetensors>=0.5
+ftfy>=6.3
+regex>=2024.11
+tqdm>=4.67
+onnxruntime>=1.21,<2

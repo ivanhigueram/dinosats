@@ -24,3 +24,5 @@ __pycache__/
 /dinotxt-demo
 /dinotxt-demo.zip
 *.tmp.*
+*.sif
+slurm-*.out
