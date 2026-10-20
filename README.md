@@ -302,13 +302,13 @@ NGC includes CUDA compatibility libraries; the GPU preflight verifies the
 combination of container libraries and the allocated node's host driver.
 
 ```bash
-export DINOSATS_OUT="$SCRATCH/siaya_full"
 mkdir -p "$SCRATCH/dinosats-logs"
 sbatch --output="$SCRATCH/dinosats-logs/siaya-%j.log" scripts/siaya.sbatch
 ```
 
 The job defaults to `$SCRATCH/inventory.json`, `$SCRATCH/vantor_request.csv`,
-and `$SCRATCH/vantor_browse`. The inventory's RGB paths must point to the
+and `$SCRATCH/vantor_browse`, and writes outputs to `$SCRATCH/siaya_full`
+(override with `DINOSATS_OUT` if needed). The inventory's RGB paths must point to the
 transferred strip VRTs under `$SCRATCH/ard`. Pass `--inventory`, `--requests`,
 or `--clouds` after the script name to override these defaults.
 

@@ -8,7 +8,7 @@
 #SBATCH --time=24:00:00
 
 set -euo pipefail
-: "${DINOSATS_OUT:?Set a new output directory on SCRATCH or GROUP_SCRATCH}"
+DINOSATS_OUT="${DINOSATS_OUT:-$SCRATCH/siaya_full}"
 
 hostname
 printf 'SLURM_JOB_ID=%s\n' "$SLURM_JOB_ID"
