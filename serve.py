@@ -15,7 +15,9 @@ import os
 import re
 import shutil
 import sys
+from http import HTTPStatus
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 ROOT = Path(__file__).resolve().parent
 RANGE = re.compile(r"bytes=(\d*)-(\d*)$")
@@ -35,6 +37,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     }
     verbose = False
     isolation = True
+    default_config = None
 
     def end_headers(self):
         if self.isolation:
@@ -45,6 +48,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def send_head(self):
         self._remaining = None
+        url = urlsplit(self.path)
+        query = dict(parse_qsl(url.query))
+        if self.default_config and url.path in ("/", "/index.html") and "config" not in query:
+            query["config"] = self.default_config
+            self.send_response(HTTPStatus.FOUND)
+            self.send_header("Location", url.path + "?" + urlencode(query))
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return None
         match = RANGE.match(self.headers.get("Range", "").strip())
         path = self.translate_path(self.path)
         if not match or not os.path.isfile(path):
@@ -104,9 +116,15 @@ def main():
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--verbose", action="store_true", help="Log every request")
     ap.add_argument("--no-isolation", action="store_true", help="Don't send COOP/COEP headers")
+    ap.add_argument("--config", help="Default scene config relative to web/ (e.g. data/siaya/pre.json)")
     args = ap.parse_args()
     Handler.verbose = args.verbose
     Handler.isolation = not args.no_isolation
+    if args.config:
+        path = (ROOT / "web" / args.config).resolve()
+        if not path.is_relative_to(ROOT / "web") or not path.is_file():
+            ap.error("--config must name an existing file inside web/")
+    Handler.default_config = args.config
     server = Server((args.host, args.port), functools.partial(Handler, directory=ROOT / "web"))
     print(f"serving {ROOT / 'web'} at http://localhost:{args.port}/")
     server.serve_forever()

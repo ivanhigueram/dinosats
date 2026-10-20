@@ -1295,3 +1295,21 @@ textarea:focus {
     flex: 1 1 auto;
   }
 }
+#scene-picker {
+  margin-top: 12px;
+}
+#scene-picker label {
+  display: block;
+  margin-bottom: 6px;
+}
+#scene-select {
+  width: 100%;
+  padding: 7px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--muted-strong);
+  border-radius: 6px;
+}
+#scene-source {
+  overflow-wrap: anywhere;
+}

@@ -12,3 +12,5 @@ tqdm>=4.70
 onnx>=1.23
 onnxruntime>=1.30
 onnxscript>=0.7
+socksio>=1.0  # SOCKS proxy support for Hugging Face downloads
+shapely>=2.1  # Buffered Vantor cloud polygons

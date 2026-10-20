@@ -1,0 +1,25 @@
+[project]
+name = "dinosats"
+version = "0.1.0"
+description = "Text search over aerial imagery with DINOv3 and dino.txt"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "torch>=2.14",
+    "torchvision>=0.29",
+    "numpy>=2.5",
+    "rasterio>=1.5",
+    "safetensors>=0.8",
+    "huggingface_hub>=2.1",
+    "ftfy>=6.3",
+    "regex>=2026.9.29",
+    "tqdm>=4.70",
+    "onnx>=1.23",
+    "onnxruntime>=1.30",
+    "onnxscript>=0.7",
+    "socksio>=1.0.0",
+    "shapely>=2.1",
+]
+
+[tool.uv]
+package = false

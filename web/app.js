@@ -178,7 +178,7 @@ function makeNaipSource(scene) {
     convertToRGB: "auto", // JPEG-compressed COGs are stored as YCbCr
     interpolate: true,
     transition: 0,
-    attributions: "NAIP imagery: USDA FPAC, via Microsoft Planetary Computer",
+    attributions: scene.attribution || "NAIP imagery: USDA FPAC, via Microsoft Planetary Computer",
   });
 }
 
@@ -349,7 +349,7 @@ function regionCanvas(region) {
     const span = Math.max(1e-6, 1 - threshold);
     for (let i = 0; i < values.length; i++) {
       const v = values[i];
-      if (v < threshold) continue;
+      if (!Number.isFinite(v) || v < threshold) continue;
       const c = Math.round(v * 255) * 3;
       px[i * 4] = LUT[c];
       px[i * 4 + 1] = LUT[c + 1];
@@ -382,6 +382,16 @@ async function openEmbeddings(scene) {
     levels.push({ image, width, height, tile: [image.getTileWidth(), image.getTileHeight()], res });
   }
   levels.sort((a, b) => b.width - a.width).forEach((l, i) => (l.index = i));
+  // Auxiliary rasters share the embedding grid and overview dimensions.
+  for (const name of ["validity", "sources"]) {
+    if (!scene[name]) continue;
+    const aux = await ol.fromUrl(scene[name]);
+    const images = await Promise.all(Array.from({ length: await aux.getImageCount() }, (_, i) => aux.getImage(i)));
+    for (const level of levels) {
+      level[name] = images.find((im) => im.getWidth() === level.width && im.getHeight() === level.height && !((im.fileDirectory.NewSubfileType ?? 0) & 4));
+      if (!level[name]) throw new Error(`${name} grid does not match embeddings`);
+    }
+  }
   // Size on disk, from the Content-Range of the header requests.
   state.embeddingBytes = tiff.source?.fileSize || tileBytes;
   // A few decoder workers are plenty for the embedding tiles (the default is one per core, on top of OpenLayers' own pool).
@@ -390,7 +400,17 @@ async function openEmbeddings(scene) {
 }
 
 async function loadLevel(level) {
-  return level.image.readRasters({ interleave: true, pool: state.pool });
+  return loadRegionData(level);
+}
+
+async function loadRegionData(level, window) {
+  const options = { interleave: true, pool: state.pool, ...(window ? { window } : {}) };
+  const [codes, valid, sources] = await Promise.all([
+    level.image.readRasters(options),
+    level.validity?.readRasters(options),
+    level.sources?.readRasters(options),
+  ]);
+  return { codes, valid, sources };
 }
 
 /** Makes a fully loaded level the global region and rescores the current query on it. */
@@ -418,11 +438,11 @@ async function refineGlobal(level) {
   }
 }
 
-function makeRegion(key, level, col0, row0, width, height, codes) {
+function makeRegion(key, level, col0, row0, width, height, data) {
   const [x0, , , y1] = state.extent;
   const [rx, ry] = level.res;
   const extent = [x0 + col0 * rx, y1 - (row0 + height) * ry, x0 + (col0 + width) * rx, y1 - row0 * ry];
-  return { key, level: level.index, col0, row0, width, height, extent, codes, used: performance.now(), bg: null, cos: null, values: null, canvas: null };
+  return { key, level: level.index, col0, row0, width, height, extent, ...data, used: performance.now(), bg: null, cos: null, values: null, canvas: null };
 }
 
 /** Blocks of a level that intersect the view, nearest to the view centre first. */
@@ -462,9 +482,9 @@ async function loadBlock({ key, level, bx, by }) {
     const width = Math.min(level.tile[0], level.width - col0);
     const height = Math.min(level.tile[1], level.height - row0);
     const win = [col0, row0, col0 + width, row0 + height];
-    const codes = await level.image.readRasters({ window: win, interleave: true, pool: state.pool });
-    const region = makeRegion(key, level, col0, row0, width, height, codes);
-    if (state.debias) region.inv = await state.debias.invNorm(codes);
+    const data = await loadRegionData(level, win);
+    const region = makeRegion(key, level, col0, row0, width, height, data);
+    if (state.debias) region.inv = await state.debias.invNorm(region.codes);
     if (stale() || level.index >= state.global.level) return; // the debiasing or the global level changed meanwhile
     regionLse(region, state.current?.prompt); // background scores are the bulk of the work; do it before drawing
     state.blocks.set(key, region);
@@ -743,6 +763,7 @@ function regionValues(region) {
       data = new Float32Array(cos.length);
       for (let i = 0; i < cos.length; i++) data[i] = Math.min(1, Math.max(0, (cos[i] - c.lo) / (c.hi - c.lo || 1)));
     }
+    if (region.valid) for (let i = 0; i < data.length; i++) if (!region.valid[i]) data[i] = NaN;
     region.values = { key: c.key, data };
   }
   return region.values.data;
@@ -1027,6 +1048,11 @@ function renderPoint() {
   ];
   pointSource.addFeature(new ol.Feature({ geometry: new ol.Point(center) }));
   const [lon, lat] = ol.transform(center, state.projection, "EPSG:4326");
+  if (region.valid && !region.valid[index]) {
+    info.textContent = "No clear embedding coverage at this location";
+    list.replaceChildren();
+    return;
+  }
   let x = state.projector.pixelEmbedding(region.codes, index);
   if (state.debias) x = state.debias.projectOut(x);
   // Candidates: the precomputed vocabulary plus every other prompt encoded this session (queries and background).
@@ -1035,6 +1061,9 @@ function renderPoint() {
   const textNorm = state.debias ? (t) => state.debias.textNorm(t) : null;
   const top = topStrings(x, [state.vocab, typed], state.pca.text.logit_scale, 10, textNorm);
   info.textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+  const source = state.scene.source_catalog?.[region.sources?.[index]];
+  if (source) info.textContent += ` · ${source.sensor} · ${source.date} · ${source.catalog_id}`;
+  if (state.scene.sources && res > state.levels[0].res[0]) info.textContent += " · overview: source is representative";
   info.title = `${res.toFixed(1)} m token; cosine, then softmax share over ${state.vocab.strings.length + typed.strings.length} strings`;
   list.replaceChildren(
     ...top.map((m) => {
@@ -1065,7 +1094,10 @@ function rescore() {
   const cos = regionCos(g, c.prompt);
   const lse = scoreMode() === "relative" ? regionLse(g, c.prompt) : null;
   c.relative = lse != null;
-  if (!c.relative) g.cos.stretch ??= quantiles(cos, [0.5, 0.999]);
+  if (!c.relative) {
+    const observed = g.valid ? cos.filter((_, i) => g.valid[i]) : cos;
+    g.cos.stretch ??= observed.length ? quantiles(observed, [0.5, 0.999]) : [0, 1];
+  }
   [c.lo, c.hi] = c.relative ? [0, 1] : g.cos.stretch;
   c.key = [c.prompt, c.relative, state.background.sig, c.lo, c.hi].join("\n");
   c.cos = cos;
@@ -1153,6 +1185,22 @@ async function main() {
   const config = await fetchOk(params.get("config") || "config.json").then((r) => r.json());
   const scene = config.scene;
   Object.assign(state, { config, scene });
+  if (config.scenes?.length) {
+    $("scene-picker").hidden = false;
+    const current = new URL(params.get("config") || "config.json", location.href).href;
+    $("scene-select").replaceChildren(...config.scenes.map((item) => el("option", {
+      textContent: item.name,
+      value: item.config,
+      selected: new URL(item.config, location.href).href === current,
+    })));
+    $("scene-source").textContent = scene.source
+      ? `${scene.source.sensor} · ${scene.source.date} · Strip ${scene.source.catalog_id}` : "";
+    $("scene-select").addEventListener("change", (event) => {
+      const url = new URL(location.href);
+      url.searchParams.set("config", event.target.value);
+      location.assign(url); // Keep the query hash; rebuild all scene-dependent caches.
+    });
+  }
   // Start everything that doesn't depend on the embedding header right away.
   const naipSource = makeNaipSource(scene);
   pcaReady = fetchOk(scene.pca)

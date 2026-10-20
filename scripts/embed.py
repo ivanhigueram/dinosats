@@ -50,6 +50,12 @@ def positions(size: int, win: int, stride: int) -> list[int]:
     return p if p[-1] == size - win else p + [size - win]
 
 
+def inference_autocast(device: torch.device):
+    """Use native bf16 on newer GPUs; fp32 avoids the T1000's slow fp16 path."""
+    enabled = device.type == "cuda" and torch.cuda.get_device_capability(device)[0] >= 8
+    return torch.autocast("cuda", dtype=torch.bfloat16, enabled=enabled)
+
+
 def window_features(model, img: torch.Tensor, batch, args, device: torch.device) -> torch.Tensor:
     """L2-normalised (B, t, t, 1024) patch tokens for a batch of (y, x) windows, as float16 on device."""
     win, r = args.patch_size, args.resize_factor
@@ -61,9 +67,11 @@ def window_features(model, img: torch.Tensor, batch, args, device: torch.device)
         if r != 1:
             xb = F.interpolate(xb, scale_factor=r, mode="bilinear", align_corners=False)
         xb = (xb - mean) / std
-        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=device.type == "cuda"):
-            _, head_patches, backbone_patches = model.visual_model.get_class_and_patch_tokens(xb)
-        feats = backbone_patches if args.features == "backbone" else head_patches
+        with inference_autocast(device):
+            if args.features == "backbone":
+                _, feats, _ = model.visual_model.get_backbone_features(xb)
+            else:
+                _, feats, _ = model.visual_model.get_class_and_patch_tokens(xb)
         return F.normalize(feats.float(), dim=-1).view(len(batch), t, t, FEATURE_DIM).half()
 
 
@@ -136,9 +144,11 @@ def positional_basis(model, args, device: torch.device, k: int) -> torch.Tensor:
     mean = torch.tensor(IMAGENET_MEAN, device=device).view(1, 3, 1, 1)
     std = torch.tensor(IMAGENET_STD, device=device).view(1, 3, 1, 1)
     x = (torch.zeros(1, 3, size, size, device=device) - mean) / std
-    with torch.autocast("cuda", dtype=torch.bfloat16, enabled=device.type == "cuda"):
-        _, head_patches, backbone_patches = model.visual_model.get_class_and_patch_tokens(x)
-    feats = backbone_patches if args.features == "backbone" else head_patches
+    with inference_autocast(device):
+        if args.features == "backbone":
+            _, feats, _ = model.visual_model.get_backbone_features(x)
+        else:
+            _, feats, _ = model.visual_model.get_class_and_patch_tokens(x)
     E = F.normalize(feats.float().reshape(-1, FEATURE_DIM), dim=-1).T.double()
     E = E - E.mean(1, keepdim=True)
     U, _, _ = torch.linalg.svd(E, full_matrices=False)
