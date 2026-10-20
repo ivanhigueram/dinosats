@@ -312,10 +312,12 @@ sbatch --output="$SCRATCH/dinosats-logs/siaya-%j.log" scripts/siaya.sbatch \
     --clouds "$DINOSATS_DATA/csda/vantor_browse"
 ```
 
-Update inventory paths before submission. Inputs are bound at the same absolute
-paths, with imagery and weights read-only. Keep permanent copies of inputs and
-finished outputs outside Sherlock's purged scratch storage. Re-submit the same
-command to resume after the time limit.
+Update inventory paths before submission. [Sherlock exposes compute-node
+filesystems inside containers by default](https://www.sherlock.stanford.edu/docs/software/containers/apptainer/).
+Only the weights directory is explicitly mapped, read-only, to the image's
+expected `/opt/dinosats/weights` path. Keep permanent copies of inputs and finished
+outputs outside Sherlock's purged scratch storage. Re-submit the same command
+to resume after the time limit.
 
 Inside an existing GPU allocation, the optional synthetic benchmark tests the
 ViT-L/16 architecture without downloading weights:
