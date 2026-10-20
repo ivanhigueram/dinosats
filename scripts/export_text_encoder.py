@@ -23,7 +23,7 @@ import onnxruntime as ort
 import torch
 from onnx import TensorProto, helper, numpy_helper
 
-from dinotxt import BPE_VOCAB, ROOT, WEIGHTS, load_dinotxt
+from dinotxt import ROOT, WEIGHTS, load_dinotxt, model_paths
 
 PROMPTS = [
     "a photo of a cat", "two cats sleeping on a pink couch", "a brown bear", "a stop sign", "a person skiing",
@@ -86,7 +86,8 @@ def main():
         ref = np.stack([enc(t[None])[0].numpy() for t in ids])
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    (args.out.parent / "bpe_simple_vocab_16e6.txt").write_bytes(gzip.decompress(BPE_VOCAB.read_bytes()))
+    vocab_path = model_paths()[2]
+    (args.out.parent / "bpe_simple_vocab_16e6.txt").write_bytes(gzip.decompress(vocab_path.read_bytes()))
     sot, eot = tok.encoder["<|startoftext|>"], tok.encoder["<|endoftext|>"]
     check_ids = [sot, *tok.encode(SELFCHECK_PROMPT)][:76] + [eot]
     with torch.no_grad():

@@ -303,7 +303,6 @@ combination of container libraries and the allocated node's host driver.
 
 ```bash
 export DINOSATS_DATA="$SCRATCH/remote_outcomes"
-export DINOSATS_WEIGHTS="$SCRATCH/dinosats-weights"
 export DINOSATS_OUT="$SCRATCH/siaya_full"
 mkdir -p "$SCRATCH/dinosats-logs"
 sbatch --output="$SCRATCH/dinosats-logs/siaya-%j.log" scripts/siaya.sbatch \
@@ -314,10 +313,23 @@ sbatch --output="$SCRATCH/dinosats-logs/siaya-%j.log" scripts/siaya.sbatch \
 
 Update inventory paths before submission. [Sherlock exposes compute-node
 filesystems inside containers by default](https://www.sherlock.stanford.edu/docs/software/containers/apptainer/).
-Only the weights directory is explicitly mapped, read-only, to the image's
-expected `/opt/dinosats/weights` path. Keep permanent copies of inputs and finished
-outputs outside Sherlock's purged scratch storage. Re-submit the same command
-to resume after the time limit.
+No explicit bindings are needed. Submit from the repository root: the job runs
+the checked-out embedding script using the container's Python and libraries.
+The existing NGC 26.02 image includes `hf` / `huggingface_hub` 1.4.1; no rebuild
+is needed for this loader update.
+
+Put `HF_TOKEN=hf_...` in the HPC repository's gitignored `.env`. The job uses the
+image's `uv` to load this file with the existing container Python; it does not
+sync or install the workstation environment. Alternatively, export `HF_TOKEN`
+before submission or run `apptainer exec --cleanenv "$GROUP_HOME/containers/dinosats.sif" hf auth login`
+once. Tokens are not printed or included in the image. Existing `weights/` files
+are reused; missing files are downloaded through `huggingface_hub` at pinned
+revisions. The backbone comes from Meta's gated repository; the dino.txt head
+and tokenizer come from the same PIA-SPACE-LAB mirror used above.
+Downloads are cached under `${HF_HUB_CACHE:-$SCRATCH/huggingface/hub}`.
+
+Keep permanent copies of inputs and finished outputs outside Sherlock's purged
+scratch storage. Re-submit the same command to resume after the time limit.
 
 Inside an existing GPU allocation, the optional synthetic benchmark tests the
 ViT-L/16 architecture without downloading weights:
