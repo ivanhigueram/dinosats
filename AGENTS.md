@@ -1,3 +1,98 @@
+# DinoSats project workflow
+
+## Scope and entry points
+
+- The current goal is the full Siaya pre/endline interactive search map using
+  processed Vantor imagery. `scripts/build_siaya_full.py` precomputes embeddings;
+  the browser scores new text queries against them.
+- `scripts/siaya.sbatch` runs the full pipeline on Sherlock. Submit from the
+  repository root with `sbatch scripts/siaya.sbatch`; defaults belong in the
+  script, not in a list of exports the user must remember.
+- The pipeline uses RGB imagery at 0.5 m/pixel and produces 4 m embedding tokens.
+  It shares PCA and quantization across three pre and six endline strips.
+  Calibration, positional correction, and vocabulary embeddings are generated
+  for the run; do not reuse pilot calibration accidentally.
+- `scripts/build_siaya.py` is the pilot builder. `serve.py --port 8787` serves
+  the local map. Keep the full-run and pilot assets distinct.
+
+## Sherlock and containers
+
+- Access Sherlock with `ssh sherlock`. Read `/etc/agents/AGENTS.md` and the
+  relevant topic files at the start of each remote session and after compaction.
+  Use a login shell when commands need `$SCRATCH`, `$GROUP_HOME`, or `sh_part`.
+- Always use the `serc` partition, including CPU builds. Never use `normal`.
+  Prefer the user's existing allocation. When the user is running jobs, provide
+  commands rather than submitting additional verification jobs automatically.
+- Builds, ML imports, inference, and GPU tests belong on compute nodes.
+  Wait at least 60 seconds between scheduler checks. Pending `(None)` alone
+  does not justify cancellation or duplicate submissions.
+- The working image path is `$GROUP_HOME/containers/dinosats.sif`. The recipe is
+  `containers/ngc.def`; `scripts/build_ngc.sbatch` builds it. Set `DINOSATS_IMAGE`
+  explicitly when rebuilding this path: the build script's default differs.
+- Follow `../remote_outcomes/infrastructure/build_sif.sbatch` as the build
+  reference, keeping that project unchanged. Use 64 GB RAM, node-local temporary
+  extraction, persistent download cache, and publish the staged SIF only after
+  checks pass. Build and GPU-test in one allocation when both are needed.
+- Inside an existing allocation, use `bash scripts/build_ngc.sbatch` from the
+  repo root. `#SBATCH` directives do not allocate resources when run with bash.
+  `DINOSATS_GPU_TEST=1` enables the final image's GPU benchmark.
+- Use `--nv` for GPU access, including `nvidia-smi` inside the container.
+  Preserve Slurm's `CUDA_VISIBLE_DEVICES` across `--cleanenv`. This image targets
+  A100/H100-class GPUs; do not assume V100 compatibility.
+- [Sherlock mounts compute-node filesystems by default](https://www.sherlock.stanford.edu/docs/software/containers/apptainer/).
+  Do not add redundant data bindings. The job executes checked-out repo code
+  with the image's Python, so code-only updates do not require image rebuilds.
+- Preserve NGC's Torch/CUDA stack. Do not run the workstation `uv sync` inside
+  the image. Container additions are in `containers/ngc-requirements.txt`.
+
+## Inputs, credentials, and outputs
+
+The established HPC layout is below; verify existence before claiming readiness.
+
+| Purpose | Path |
+| --- | --- |
+| Processed GeoTIFFs and strip VRTs | `$SCRATCH/ard/` |
+| Nine-strip inventory | `$SCRATCH/inventory.json` |
+| Acquisition metadata | `$SCRATCH/vantor_request.csv` |
+| Cloud masks | `$SCRATCH/vantor_browse/` |
+| Full-run outputs and checkpoints | `$SCRATCH/siaya_full/` |
+| Hugging Face model cache | `$SCRATCH/huggingface/hub/` |
+| Hugging Face Xet cache | `$SCRATCH/huggingface/xet/` |
+
+- `data/` is gitignored. The required full-run input from it is
+  `data/siaya/inventory.json`, relocated to the scratch path above with updated
+  `rgb` paths. Check nested VRT source references too. The pilot manifest and
+  `data/siaya/cpu64/` outputs are not full-run prerequisites.
+- Source imagery stays unchanged. Raw NASA deliveries are not embedding inputs.
+  Keep permanent copies outside purged scratch. Changed input paths or code
+  fingerprints can require a fresh output directory rather than resuming.
+- `scripts/dinotxt.py` reuses local weights or downloads pinned HF revisions.
+  The backbone is Meta's official DINOv3 ViT-L/16 LVD-1689M. The dino.txt head
+  and tokenizer use the existing PIA-SPACE-LAB mirror; it is not a different
+  backbone. Do not substitute the SAT backbone: text alignment differs.
+- The image was verified to include `hf` / `huggingface_hub` 1.4.1. The job
+  loads `HF_TOKEN` from the HPC repo's `.env` using `uv --env-file`, with the
+  existing container Python. Never print tokens, commit `.env`, or bake secrets
+  into images. No weights binding or `DINOSATS_WEIGHTS` export is needed.
+- Browser assets under `web/models/` are separate from embedding inputs and are
+  gitignored. Check them before serving the map, not as a GPU-job prerequisite.
+- The local full embedding job was stopped and its output deleted at the user's
+  request. Focus on HPC; do not restart local production inference implicitly.
+
+## Validation and handoff
+
+- Distinguish image metadata inspection, CPU imports, CUDA kernel execution,
+  synthetic benchmarks, and inference with real weights. Do not report a queued
+  check or `torch.cuda.is_available()` alone as successful GPU validation.
+- Base ETAs on measured windows/second and remaining work. Candidate tiles can
+  be empty; synthetic GPU timings exclude imagery I/O, PCA, and map assembly.
+- Keep scripts simple. Validate shell edits with `bash -n` and changes with
+  `git diff --check`; use focused smoke checks rather than broad test scaffolds.
+- When pushing requested HPC changes, confirm the push completed and give the
+  user the commit and minimal pull/run commands. Do not edit `.README.md.swp`.
+
+## Coding conventions
+
 Here are some instructions when writing code:
 
 - We use `uv` for Python environments. Make sure you always use it to install
